@@ -1,4 +1,4 @@
-from scapy.all import TCP, UDP, IP, ICMP, sr
+from scapy.all import TCP, UDP, IP, ICMP, sr, sr1
 import argparse
 
 top_ports = [
@@ -96,6 +96,67 @@ def scan_target(packet):
     return sr(packet, timeout=2, verbose=0)
 
 
+# TCP SYN/FIN Ping Scan to detect live hosts
+def perform_tcp_scan(target, flags):
+    packet = IP(dst=target) / TCP(dport=80, flags=flags)
+    ans, _ = scan_target(packet)
+
+    if ans:
+        print(f"Host {target} is up.")
+    else:
+        print(f"Host {target} is down.")
+
+
+# UDP Ping Scan to detect live hosts
+def perform_udp_scan(target):
+    packet = IP(dst=target) / UDP(dport=53)
+    ans, _ = scan_target(packet)
+
+    for snd, rcv in ans:
+        # print("Packet Sent: ", snd)
+        # print("Packet Received: ", rcv)
+        ip = rcv[IP]
+        if ip.haslayer(ICMP):
+            if ip[ICMP].type == 3:
+                print(f"UDP Scan -> Host is active: {rcv[IP].src}")
+
+
+# ICMP Ping Scan to detect live hosts
+def perform_icmp_scan(target):
+    packet = IP(dst=target) / ICMP()
+    ans, _ = scan_target(packet)
+
+    for snd, rcv in ans:
+        # print("Packet Sent: ", snd)
+        # print("Packet Received: ", rcv)
+        ip = rcv[IP]
+        if ip[ICMP].type == 0 and ip[ICMP].code == 0:
+            print(f"ICMP Scan -> Host is active: {rcv[IP].src}")
+
+
+# Perform TCP Port Scan
+def perform_tcp_port_scan(target, port):
+    packet = IP(dst=target) / TCP(dport=port, flags='S')
+    response = sr1(packet, timeout=2, verbose=0)
+    if response:
+        if response.haslayer(TCP) and response.getlayer(TCP).flags == "SA":
+            print(f"Port {port} is open.")
+        else:
+            print(f"Port {port} is closed.")
+    else:
+        print(f"Port {port} is filtered.")
+
+
+# Perform UDP Port Scan
+def perform_udp_port_scan(target, port):
+    packet = IP(dst=target) / UDP(dport=port)
+    response = sr1(packet, timeout=1, verbose=0)
+    if response and response.haslayer(UDP):
+            print(f"Port {port} is open.")
+    else:
+        print(f"Port {port} is closed or filtered.")
+
+
 class SplitArgs(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         setattr(namespace, self.dest, values.split(','))
@@ -107,6 +168,7 @@ parser.add_argument('--top-ports', dest='top_ports', action='store_true', help='
 parser.add_argument('--all-ports', dest='all_ports', action='store_true', help='Scan all ports')
 parser.add_argument('-p', dest='ports', action=SplitArgs)
 parser.add_argument('-f', '--flags', default='S', help='Specify TCP Flag')
+parser.add_argument('--scan-type', dest='scan_type', help='Specify Scan Type: PS/PU/PE - TCP Syn/UDP/ICMP Discovery, sS/sU - TCP/UDP Port Scan')
 args = parser.parse_args()
 
 if args.top_ports:
@@ -116,44 +178,17 @@ elif args.all_ports:
 elif args.ports:
     ports_to_scan = args.ports
 else:
-    ports_to_scan = args.ports
+    ports_to_scan = top_ports
 
-
-# TCP SYN/FIN Ping Scan to detect live hosts
-packet = IP(dst=args.target) / TCP(dport=80, flags=args.flags)
-ans, _ = scan_target(packet)
-
-for snd, rcv in ans:
-    # print("Packet Sent: ", snd)
-    # print("Packet Received: ", rcv)
-    if rcv.haslayer(TCP):
-        if snd[TCP].flags == 'S' and rcv[TCP].flags == 'SA':
-            print(f"TCP Scan -> Host is active: {rcv[IP].src}")
-
-        if snd[TCP].flags == 'F' and rcv[TCP].flags == 'R':
-            print(f"TCP Scan -> Host is active: {rcv[IP].src}")
-
-
-# UDP Ping Scan to detect live hosts
-packet = IP(dst=args.target) / UDP(dport=53)
-ans, _ = scan_target(packet)
-
-for snd, rcv in ans:
-    # print("Packet Sent: ", snd)
-    # print("Packet Received: ", rcv)
-    ip = rcv[IP]
-    if ip.haslayer(ICMP):
-        if ip[ICMP].type == 3:
-            print(f"UDP Scan -> Host is active: {rcv[IP].src}")
-
-
-# ICMP Ping Scan to detect live hosts
-packet = IP(dst=args.target) / ICMP()
-ans, _ = scan_target(packet)
-
-for snd, rcv in ans:
-    # print("Packet Sent: ", snd)
-    # print("Packet Received: ", rcv)
-    ip = rcv[IP]
-    if ip[ICMP].type == 0 and ip[ICMP].code == 0:
-        print(f"ICMP Scan -> Host is active: {rcv[IP].src}")
+if args.scan_type == 'PS':
+    perform_tcp_scan(args.target, args.flags)
+elif args.scan_type == 'PU':
+    perform_udp_scan(args.target)
+elif args.scan_type == 'PE':
+    perform_icmp_scan(args.target)
+elif args.scan_type == 'sS':
+    for port in ports_to_scan:
+        perform_tcp_port_scan(args.target, int(port))
+elif args.scan_type == 'sU':
+    for port in ports_to_scan:
+        perform_udp_port_scan(args.target, int(port))
