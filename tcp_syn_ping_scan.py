@@ -8,7 +8,7 @@ args = parser.parse_args()
 
 ip = IP(dst=args.dest_ip)
 
-top_100_ports = [
+top_ports = [
     21,    # FTP
     22,    # SSH
     23,    # Telnet
@@ -118,5 +118,5 @@ def tcp_syn_ping_scan(target_ip, target_port):
 
 
 # Perform TCP SYN Ping Scan against a range of ports on a target host
-for port in top_100_ports:
+for port in top_ports:
     tcp_syn_ping_scan(args.dest_ip, port)
